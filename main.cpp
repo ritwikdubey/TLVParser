@@ -1,20 +1,22 @@
 #include <iostream>
-#include "Picture.h"
-using namespace std;
+#include "TLVHelper.hh"
 
 int main()
 {
-string Inputfile = "TestInput.binimage";
-TLVHelper helperObj(Inputfile);
+    {
+        // Unit test 1
+        std::string Inputfile = "TestInput.binimage";
+        TLVHelper tlvHelper(Inputfile);
+        std::cout << "converting :" << Inputfile << std::endl;
+        tlvHelper.WritePictureToTextFile();
+    }
 
-// Parse the binary file
-helperObj.ReadBinaryFile();
-
-Picture image;
-
-// Convert the coded image to 2D array of pixel
-image.CreateImage(helperObj);
-
-// Write the image file info to text file
-image.WritePictureToTextFile();
+    {
+        // Unit test 2
+        std::string Inputfile = "sample.bin";
+        TLVHelper tlvHelper(Inputfile);
+        std::cout << "converting :" << Inputfile << std::endl;
+        tlvHelper.WritePictureToTextFile();
+    }
+    return 0;
 }

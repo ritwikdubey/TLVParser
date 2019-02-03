@@ -1,26 +1,24 @@
 #include <fstream>
-#include <vector>
-#include "TLVHelper.h"
+#include "TLVHelper.hh"
 #include <iomanip>
 
-using namespace std;
-#define TYPESIZE 1
-#define BLOCKSIZE 2
-#define COLORMAPSIZE 7
-int TLVHelper::ReadBinaryFile()
+//#define TYPESIZE 1
+//#define BLOCKSIZE 2
+//#define COLORMAPSIZE 7
+int TLVHelper::ReadBinaryFile(const std::string& inputFileName)
 {
 	// find size of the file
-	ifstream mystream(InputFileName.c_str(),ios::in|ios::binary);
+	std::ifstream mystream(inputFileName.c_str(),std::ios::in|std::ios::binary);
 	mystream.seekg(0,mystream.end);
-	int size = mystream.tellg();
+	unsigned long size = mystream.tellg();
 	mystream.seekg(0,mystream.beg);
 
-	vector<char> buffer(size);
+	std::vector<char> buffer(size);
 	mystream.read(buffer.data(),size);
 	mystream.close();
 
 	int index = 0;
-	fileType = buffer.at(index);
+	//fileType = buffer.at(index);
 	index += (TYPESIZE + BLOCKSIZE);
 
 	int numType = 3;	// Since there can be only 3 types of sub blocks in any order
@@ -29,10 +27,14 @@ int TLVHelper::ReadBinaryFile()
 		int type = buffer.at(index);
 		int unitSize = (buffer.at(index+1)<<8)|buffer.at(index+2);
 		index += (TYPESIZE + BLOCKSIZE);
-		vector<unsigned char>SectionBuffer(&buffer[index],&buffer[index+unitSize]);
+		std::vector<unsigned char>SectionBuffer(&buffer[index],&buffer[index+unitSize]);
 		switch(type){
 			case 2:
-			SetFileName(SectionBuffer);
+			if(_imageFileName.empty())
+			{
+				_imageFileName.assign(SectionBuffer.begin(), SectionBuffer.end());
+			}
+			//SetFileName(SectionBuffer);
 			break;
 
 			case 3:
@@ -44,106 +46,123 @@ int TLVHelper::ReadBinaryFile()
 			break;
 		
 			default:
-			cout<< "Invalid b/Not all block types detected" << endl;
+			std::cout<< "Invalid b/Not all block types detected" << std::endl;
 		}
 		index += unitSize;
 	}
 	return 1;
 }
 
-void TLVHelper::SetFileName(vector<unsigned char> FileNameBuffer)
+void TLVHelper::SetColorMap(const std::vector<u_char>& buffer)
 {
-	for ( int count = 0; count < FileNameBuffer.size(); count++ )
-	{
-		ImageFileName.push_back(FileNameBuffer[count]);
-	}
-	cout << ImageFileName<<endl; // for debugging purpose
-}
-
-void TLVHelper::SetColorMap(vector<unsigned char> ColorMapBuffer)
-{
-	int numOfEntries = ColorMapBuffer.size()/COLORMAPSIZE;	// color mapping size is constant
-	int index = 0;
-	for ( int count = 0; count < numOfEntries; count++ )
+	size_t index = 0;
+	for ( size_t count = 0; count < buffer.size()/COLORMAPSIZE; count++ )
 	{
 		index += (TYPESIZE + BLOCKSIZE);
-		unsigned char key = ColorMapBuffer.at(index++);
-		vector<unsigned char> colorComb(&ColorMapBuffer[index], &ColorMapBuffer[index+3]);
-
-		color_table.insert(map<unsigned char,vector<unsigned char> >::value_type(key,colorComb));
+		u_char key = buffer.at(index++);
+		color_table.insert({key,{buffer.begin()+index, buffer.begin()+index+3}});
 		index += 3;
 	}
 }
 
-vector<unsigned char> TLVHelper::ParseRow(vector<unsigned char> rowCoded)
+void TLVHelper::ParseRow(const std::vector<u_char>& rowCoded, std::vector<u_char>& row)
 {
-	vector<unsigned char> row;
-	int i = 0;
+	size_t i = 0;
 	while ( i < rowCoded.size() )
 	{
-		if ( rowCoded.at(i) == 8 )	// individual pixel data
-		{
-			i += (TYPESIZE + BLOCKSIZE);
-			row.push_back(rowCoded.at(i));
-			i++;
-		}
-		else if (rowCoded.at(i) == 7)	// group pixel data converted to individual pixel data
-		{
-			i += (TYPESIZE + BLOCKSIZE);
-			unsigned char num = rowCoded.at(i);
-			i++;
-			unsigned char key = rowCoded.at(i);
-			while (num--)
+		switch( rowCoded.at(i)) {
+			case 8:    // individual pixel data
 			{
-				row.push_back(key);
+				i += (TYPESIZE + BLOCKSIZE);
+				row.push_back(rowCoded.at(i));
+				i++;
+				break;
 			}
-			i++;
+			case 7:    // group pixel data converted to individual pixel data
+			{
+				i += (TYPESIZE + BLOCKSIZE);
+				u_char num = rowCoded.at(i++);
+				u_char key = rowCoded.at(i++);
+				while (num--) {
+					row.push_back(key);
+				}
+				break;
+			}
+			default:
+			std::cout << "Error: Unknown color code in row" << std::endl;
 		}
-		else
-			cout<<"Error"<<endl;
-		
 	}
-	vector<unsigned char>::iterator t = row.begin();
-	return row;
 }
 
-void TLVHelper::SetPixelData(vector<unsigned char> PixelDataBuffer)
+void TLVHelper::SetPixelData(const std::vector<u_char>& buffer)
 {
-	int index = 0;
-	for( ; ((index < PixelDataBuffer.size()) && (PixelDataBuffer.at(index) == 6)); ) // type 0x06 identifies new row
+	size_t index = 0;
+	while((index < buffer.size()) && (buffer.at(index) == 6)) // type 0x06 identifies new row
 	{
 		index++;
-		int size = ((PixelDataBuffer.at(index))<<8)|(PixelDataBuffer.at(index+1));
+		int size = ((buffer.at(index))<<8)|(buffer.at(index+1));
 		index += 2;
 		
 		// make a 2D array of <rows<pixel>>
-		vector<unsigned char> rowCoded;
-		for ( int count = 0; count < size; count++)
-		{
+		std::vector<u_char> rowCoded(buffer.begin()+index, buffer.begin()+index+size);
+		/*for ( int count = 0; count < size; count++)
+		{`
 			rowCoded.push_back(PixelDataBuffer.at(index+count));
-		}
+		}*/
 
-		vector<unsigned char>row;
-		row = ParseRow(rowCoded);
-		RowLength = row.size();	// row size
+		std::vector<u_char>row;
+		ParseRow(rowCoded, row);
+		if(_rowLength==0)
+		{
+			_rowLength = row.size();
+		}
+		else
+		{
+			if(_rowLength != row.size())
+			{
+				std::cout << "Problem, how come this row isn't matching last one"
+						  << std::endl;
+			}
+		}
 		pixel_data.push_back(row);
 		index += size;
 	}
-	NumOfRows = pixel_data.size();	// number of pixel rows in the coded file
+	_numOfRows = pixel_data.size();	// number of pixel rows in the coded file
 }
 
-Pixel TLVHelper::GetPixelColor(int i1, int j1)
+PixelType TLVHelper::GetPixelColor(u_long i, u_long j) const
 {
 	// 1. Get the key at pixel location
 	// 2. Get the color combination from color map
 	// 3. Initialize and return Pixel object
 	
-	unsigned char key = (pixel_data[i1][j1]&0xff);
-	vector<unsigned char> color = color_table.find(key)->second;
+	u_char key = (pixel_data[i][j]&0xff);
+	std::vector<u_char> color = color_table.find(key)->second;
 
-	Pixel p((color[0]&0xff), (color[1]&0xff), (color[2]&0xff));
+	PixelType p((color[0]&0xff), (color[1]&0xff), (color[2]&0xff));
 	return p;
 }
 
+void TLVHelper::WritePictureToTextFile()
+{
+	std::ofstream writeFile(_imageFileName.c_str());
+	writeFile << _imageFileName.c_str();
+	writeFile << "\r\n";
+	writeFile << _numOfRows << " " << _rowLength;
+	writeFile << "\r\n";
+	writeFile << "\r\n";
+	for(u_int i = 0;i<_numOfRows; i++)
+	{
+		//std::vector<PixelType> row;
+		for(u_int j=0;j<_rowLength;j++)
+		{
+            writeFile << std::hex << std::setw(2) << std::setfill('0')
+                      << short(GetPixelColor(i,j).red) << " " << std::setw(2) << std::setfill('0')
+                      << short(GetPixelColor(i,j).green) << " " << std::setw(2) << std::setfill('0')
+					  << short(GetPixelColor(i,j).blue) << " ";
+		}
+        writeFile<<"\r\n";
+	}
 
-
+	writeFile.close();
+}
